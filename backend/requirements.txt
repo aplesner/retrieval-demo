@@ -1,0 +1,27 @@
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic-settings>=2.0.0
+
+# ML - PyTorch (2.6 supports GTX 1080 / SM 6.1)
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
+
+# ML - Vision (CLIP)
+transformers>=4.35.0
+Pillow>=10.0.0
+
+# ML - Audio (CLAP)
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# Vector database
+qdrant-client>=1.6.0
+
+# Utilities
+numpy>=1.24.0
+tqdm>=4.66.0
+
+# PDF processing (for IKEA manuals)
+pdf2image>=1.16.0

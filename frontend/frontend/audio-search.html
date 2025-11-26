@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text → Audio Search | Multimodal Retrieval Demo</title>
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        /* Audio-specific styles */
+        .audio-card {
+            background: var(--card-bg);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .audio-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .audio-card.selected {
+            outline: 3px solid var(--primary);
+        }
+        
+        .audio-card audio {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+        
+        .audio-card-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .audio-card-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        
+        .audio-card-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .audio-card-category {
+            background: var(--bg);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+        
+        .audio-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        
+        /* Waveform visualization placeholder */
+        .audio-waveform {
+            height: 40px;
+            background: linear-gradient(90deg, 
+                var(--primary) 0%, var(--primary) 20%,
+                var(--border) 20%, var(--border) 100%);
+            border-radius: 0.25rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body data-mode="audio-text">
+    <header>
+        <h1>Multimodal Retrieval Demo</h1>
+        <nav>
+            <a href="index.html">Text → Image</a>
+            <a href="image-search.html">Image → Image</a>
+            <a href="multimodal.html">Text + Image</a>
+            <a href="audio-search.html" class="active">Text → Audio</a>
+        </nav>
+    </header>
+    
+    <main>
+        <section class="search-section">
+            <div class="search-row">
+                <div class="search-input-wrapper">
+                    <input 
+                        type="text" 
+                        id="search-input" 
+                        class="search-input" 
+                        placeholder="Describe the sound you're looking for..."
+                        autocomplete="off"
+                    >
+                </div>
+                <button id="search-btn" class="search-btn">Search</button>
+            </div>
+            <div id="suggestions" class="suggestions"></div>
+        </section>
+        
+        <section class="results-section">
+            <div class="results-header">
+                <h2>Results</h2>
+                <span id="results-count" class="results-count"></span>
+            </div>
+            <div id="results-grid" class="audio-grid"></div>
+        </section>
+    </main>
+    
+    <div id="status" class="status">
+        <div class="status-dot"></div>
+        <span>Connecting...</span>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8080';
+        let allAudio = [];
+        let selectedAudioId = null;
+        let isLoading = false;
+        
+        async function init() {
+            document.getElementById('search-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleSearch();
+            });
+            document.getElementById('search-btn').addEventListener('click', handleSearch);
+            
+            await checkHealth();
+            await loadSuggestions();
+            await loadAllAudio();
+        }
+        
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/api/health`);
+                const data = await res.json();
+                updateStatus(true, `${data.indexed_audio} audio clips indexed`);
+            } catch (err) {
+                updateStatus(false, 'Backend unavailable');
+            }
+        }
+        
+        async function loadSuggestions() {
+            try {
+                const res = await fetch(`${API_BASE}/api/suggestions`);
+                const data = await res.json();
+                
+                const chips = data.audio_suggestions.map(s => 
+                    `<button class="suggestion-chip" onclick="selectSuggestion('${s}')">${s}</button>`
+                ).join('');
+                
+                document.getElementById('suggestions').innerHTML = `
+                    <div class="suggestions-title">Try searching for:</div>
+                    <div class="suggestion-chips">${chips}</div>
+                `;
+            } catch (err) {
+                console.error('Failed to load suggestions:', err);
+            }
+        }
+        
+        async function loadAllAudio() {
+            try {
+                const res = await fetch(`${API_BASE}/api/audio?limit=100`);
+                allAudio = await res.json();
+                displayResults(allAudio.map(a => ({...a, score: null})));
+            } catch (err) {
+                console.error('Failed to load audio:', err);
+                displayError('Failed to load audio clips');
+            }
+        }
+        
+        async function handleSearch() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+            
+            setLoading(true);
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/search/audio/text`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query, limit: 50})
+                });
+                const data = await res.json();
+                displayResults(data.results);
+            } catch (err) {
+                console.error('Search failed:', err);
+                displayError('Search failed. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        function displayResults(results) {
+            const grid = document.getElementById('results-grid');
+            const count = document.getElementById('results-count');
+            
+            count.textContent = `${results.length} results`;
+            
+            if (results.length === 0) {
+                grid.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+                return;
+            }
+            
+            grid.innerHTML = results.map(audio => `
+                <div class="audio-card" data-id="${audio.id}">
+                    <audio controls preload="metadata">
+                        <source src="${API_BASE}${audio.path}" type="audio/wav">
+                        Your browser does not support audio.
+                    </audio>
+                    <div class="audio-card-info">
+                        <div class="audio-card-name">${audio.filename}</div>
+                        <div class="audio-card-meta">
+                            ${audio.category ? `<span class="audio-card-category">${audio.category}</span>` : ''}
+                            ${audio.duration ? `<span>${audio.duration.toFixed(1)}s</span>` : ''}
+                            ${audio.score !== null ? `<span>Score: ${(audio.score * 100).toFixed(1)}%</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function selectSuggestion(text) {
+            document.getElementById('search-input').value = text;
+            handleSearch();
+        }
+        
+        function setLoading(loading) {
+            isLoading = loading;
+            const btn = document.getElementById('search-btn');
+            btn.disabled = loading;
+            btn.textContent = loading ? 'Searching...' : 'Search';
+            
+            if (loading) {
+                document.getElementById('results-grid').innerHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Searching...</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function displayError(message) {
+            document.getElementById('results-grid').innerHTML = `
+                <div class="empty-state">
+                    <p style="color: #ef4444;">${message}</p>
+                </div>
+            `;
+        }
+        
+        function updateStatus(online, message) {
+            document.getElementById('status').innerHTML = `
+                <div class="status-dot" style="background: ${online ? '#10b981' : '#ef4444'}"></div>
+                <span>${message}</span>
+            `;
+        }
+        
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
