@@ -96,7 +96,7 @@ make index
 make run
 ```
 
-Open http://localhost:8000
+Open http://localhost:8080
 
 ## Project Structure
 

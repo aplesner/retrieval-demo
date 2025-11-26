@@ -1,1 +1,0 @@
-"""Multimodal retrieval demo backend."""

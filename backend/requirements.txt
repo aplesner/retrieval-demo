@@ -17,11 +17,14 @@ librosa>=0.10.0
 soundfile>=0.12.0
 
 # Vector database
-qdrant-client>=1.6.0
+qdrant-client>=1.7.0
 
 # Utilities
 numpy>=1.24.0
 tqdm>=4.66.0
 
-# PDF processing (for IKEA manuals)
+# PDF processing and retrieval
 pdf2image>=1.16.0
+PyMuPDF>=1.23.0
+colpali-engine>=0.2.0
+qwen-vl-utils>=0.0.2

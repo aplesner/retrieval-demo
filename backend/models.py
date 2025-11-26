@@ -1,4 +1,4 @@
-"""CLIP and CLAP model wrappers for encoding text, images, and audio."""
+"""CLIP, CLAP, and ColPali model wrappers for encoding text, images, audio, and PDFs."""
 
 import torch
 import numpy as np
@@ -134,11 +134,92 @@ class CLAPEncoder:
 
 
 # ============================================================================
+# ColPali Encoder (Text + PDF Pages)
+# ============================================================================
+
+class ColPaliEncoder:
+    """Wrapper for ColPali model to encode text queries and PDF pages."""
+
+    def __init__(
+        self,
+        model_name: str = settings.colpali_model,
+        device: str = settings.colpali_device,
+    ):
+        from colpali_engine.models import ColPali, ColPaliProcessor
+
+        self.device = device
+        self.model = ColPali.from_pretrained(
+            model_name,
+            torch_dtype=torch.float32 if device == "cpu" else torch.bfloat16,
+        ).to(device).eval()
+        self.processor = ColPaliProcessor.from_pretrained(model_name)
+
+    @torch.no_grad()
+    def encode_text(self, texts: list[str]) -> torch.Tensor:
+        """Encode text queries to multi-vector embeddings.
+
+        Returns:
+            Tensor of shape [batch_size, num_query_tokens, embedding_dim]
+        """
+        batch_queries = self.processor.process_queries(texts).to(self.device)
+        embeddings = self.model(**batch_queries)
+        return embeddings.cpu()
+
+    @torch.no_grad()
+    def encode_pdf_page(self, images: list[Image.Image]) -> torch.Tensor:
+        """Encode PDF page images to multi-vector embeddings.
+
+        Args:
+            images: List of PIL images (PDF pages converted to images)
+
+        Returns:
+            Tensor of shape [batch_size, num_page_tokens, embedding_dim]
+        """
+        batch_images = self.processor.process_images(images).to(self.device)
+        embeddings = self.model(**batch_images)
+        return embeddings.cpu()
+
+    @torch.no_grad()
+    def encode_pdf_from_path(self, pdf_path: Path) -> tuple[torch.Tensor, list[Image.Image]]:
+        """Encode PDF file by converting pages to images and encoding them.
+
+        Args:
+            pdf_path: Path to PDF file
+
+        Returns:
+            Tuple of (embeddings, page_images)
+            - embeddings: Tensor [num_pages, num_tokens, embedding_dim]
+            - page_images: List of PIL images for each page
+        """
+        import fitz  # PyMuPDF
+
+        # Convert PDF pages to images
+        doc = fitz.open(pdf_path)
+        page_images = []
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            # Render at 2x resolution for better quality
+            mat = fitz.Matrix(2.0, 2.0)
+            pix = page.get_pixmap(matrix=mat)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            page_images.append(img)
+
+        doc.close()
+
+        # Encode all pages
+        embeddings = self.encode_pdf_page(page_images)
+
+        return embeddings, page_images
+
+
+# ============================================================================
 # Singleton instances
 # ============================================================================
 
 _clip_encoder: CLIPEncoder | None = None
 _clap_encoder: CLAPEncoder | None = None
+_colpali_encoder: ColPaliEncoder | None = None
 
 
 def get_clip_encoder() -> CLIPEncoder:
@@ -155,6 +236,14 @@ def get_clap_encoder() -> CLAPEncoder:
     if _clap_encoder is None:
         _clap_encoder = CLAPEncoder()
     return _clap_encoder
+
+
+def get_colpali_encoder() -> ColPaliEncoder:
+    """Get or create the ColPali encoder singleton."""
+    global _colpali_encoder
+    if _colpali_encoder is None:
+        _colpali_encoder = ColPaliEncoder()
+    return _colpali_encoder
 
 
 # Backwards compatibility

@@ -1,7 +1,7 @@
 # Multimodal Retrieval Demo - Makefile
 # Usage: make <target>
 
-.PHONY: help setup install run dev index index-images index-audio download clean stop logs
+.PHONY: help setup install run dev index index-images index-audio download clean stop logs docker-build docker-up docker-down docker-restart docker-logs docker-clean docker-up-prod
 
 # Default target
 help:
@@ -20,9 +20,10 @@ help:
 	@echo "  frontend       - Serve frontend (separate terminal)"
 	@echo ""
 	@echo "Data:"
-	@echo "  index          - Index all data (images + audio)"
+	@echo "  index          - Index all data (images + audio + PDFs)"
 	@echo "  index-images   - Index images only"
 	@echo "  index-audio    - Index audio only"
+	@echo "  index-pdfs     - Index PDFs only"
 	@echo "  download-ikea  - Download IKEA manuals"
 	@echo "  download-esc50 - Download ESC-50 audio dataset"
 	@echo ""
@@ -31,6 +32,15 @@ help:
 	@echo "  qdrant-stop    - Stop Qdrant container"
 	@echo "  logs           - Show Qdrant logs"
 	@echo "  clean          - Remove generated files"
+	@echo ""
+	@echo "Docker (Recommended):"
+	@echo "  docker-build   - Build Docker images"
+	@echo "  docker-up      - Start all services (single command!)"
+	@echo "  docker-down    - Stop all services"
+	@echo "  docker-restart - Restart all services"
+	@echo "  docker-logs    - Show logs from all services"
+	@echo "  docker-clean   - Stop and remove all containers/volumes"
+	@echo "  docker-up-prod - Start with nginx reverse proxy"
 
 # Python interpreter
 PYTHON = python3
@@ -60,7 +70,7 @@ frontend:
 	cd frontend && $(PYTHON) -m http.server 3000
 
 # Indexing
-index: index-images index-audio
+index: index-images index-audio index-pdfs
 
 index-images:
 	$(PYTHON_VENV) scripts/index_images.py --data-dir data/images
@@ -68,8 +78,14 @@ index-images:
 index-audio:
 	$(PYTHON_VENV) scripts/index_audio.py --data-dir data/audio
 
+index-pdfs:
+	$(PYTHON_VENV) scripts/index_pdfs.py --data-dir data/pdfs
+
 # Downloads
-download: download-esc50
+download: download-coco download-ikea download-esc50  download-sample
+
+download-coco:
+	$(PYTHON_VENV) scripts/download_data.py --dataset coco-val2017
 
 download-ikea:
 	$(PYTHON_VENV) scripts/download_ikea_manuals.py
@@ -103,3 +119,30 @@ clean:
 clean-all: clean
 	rm -rf $(VENV)
 	docker-compose down -v
+
+# Docker targets
+docker-build:
+	docker-compose build
+
+docker-up:
+	docker-compose up -d
+	@echo "Waiting for services to be healthy (this may take 1-2 minutes on first run)..."
+	@timeout 180 sh -c 'until curl -sf http://localhost:8080/api/health > /dev/null 2>&1; do sleep 3; done' && echo "✓ Services are ready! Access at http://localhost:8080" || echo "✗ Services failed to start after 3 minutes"
+
+docker-down:
+	docker-compose down
+
+docker-restart:
+	docker-compose restart
+
+docker-logs:
+	docker-compose logs -f
+
+docker-clean:
+	docker-compose down -v
+	docker system prune -f
+
+docker-up-prod:
+	docker-compose --profile production up -d
+	@echo "Services started with nginx reverse proxy"
+	@echo "Access at http://localhost (port 80)"

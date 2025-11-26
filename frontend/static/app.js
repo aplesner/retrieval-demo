@@ -2,7 +2,12 @@
  * Multimodal Retrieval Demo - Frontend JavaScript
  */
 
-const API_BASE = 'http://localhost:8000';
+// Dynamically determine API base URL based on deployment mode
+const API_BASE = window.location.port === '80' || window.location.port === ''
+    ? `${window.location.protocol}//${window.location.host}` // Production: same host/port (nginx proxy)
+    : window.location.hostname === 'localhost'
+        ? 'http://localhost:8080' // Local dev: backend on 8080
+        : `http://${window.location.hostname}:8080`; // Remote dev: backend on 8080
 
 // State
 let allImages = [];
@@ -70,15 +75,33 @@ async function checkHealth() {
  */
 async function loadSuggestions() {
     if (!suggestionsContainer) return;
-    
+
     try {
         const res = await fetch(`${API_BASE}/api/suggestions`);
         const data = await res.json();
-        
-        const chips = data.suggestions.map(s => 
+
+        // Determine which suggestions to show based on page mode
+        const pageMode = document.body.dataset.mode || 'text';
+        let suggestions = [];
+
+        switch(pageMode) {
+            case 'text':
+            case 'image':
+            case 'multimodal':
+                suggestions = data.image_suggestions || [];
+                break;
+            case 'audio':
+                suggestions = data.audio_suggestions || [];
+                break;
+            case 'pdf':
+                suggestions = data.pdf_suggestions || [];
+                break;
+        }
+
+        const chips = suggestions.map(s =>
             `<button class="suggestion-chip" onclick="selectSuggestion('${s}')">${s}</button>`
         ).join('');
-        
+
         suggestionsContainer.innerHTML = `
             <div class="suggestions-title">Try searching for:</div>
             <div class="suggestion-chips">${chips}</div>
@@ -136,7 +159,7 @@ async function handleSearch() {
                 break;
             case 'multimodal':
                 const weight = weightSlider?.value || 0.5;
-                results = await searchMultimodal(query, selectedImageId, parseFloat(weight));
+                results = await searchMultimodal(query, selectedImageId, 1 - parseFloat(weight));
                 break;
         }
         

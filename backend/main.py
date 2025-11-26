@@ -6,12 +6,13 @@ from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import settings
 from .database import get_db
-from .models import get_clip_encoder, get_clap_encoder
+from .models import get_clip_encoder, get_clap_encoder, get_colpali_encoder
 
 
 @asynccontextmanager
@@ -30,14 +31,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: CLAP model failed to load: {e}")
         print("Audio search will be unavailable.")
-    
+
+    # Load ColPali model
+    print(f"Loading ColPali model: {settings.colpali_model}")
+    try:
+        get_colpali_encoder()
+        print("ColPali model loaded.")
+    except Exception as e:
+        print(f"Warning: ColPali model failed to load: {e}")
+        print("PDF search will be unavailable.")
+
     # Initialize database connection
     db = get_db()
     db.create_image_collection()
     db.create_audio_collection()
+    db.create_pdf_collection()
     print(f"Connected to Qdrant. Collections ready.")
     print(f"  Images: {db.count_images()}")
     print(f"  Audio: {db.count_audio()}")
+    print(f"  PDFs: {db.count_pdfs()}")
     
     yield
     
@@ -109,6 +121,23 @@ class ItemInfo(BaseModel):
     duration: float | None = None
 
 
+class PDFSearchResult(BaseModel):
+    id: str
+    score: float
+    filename: str
+    pdf_name: str
+    page: int
+    page_number: int
+    path: str  # Path to page thumbnail
+    pdf_path: str
+    total_pages: int
+
+
+class PDFSearchResponse(BaseModel):
+    results: list[PDFSearchResult]
+    query_type: str = "pdf"
+
+
 # =============================================================================
 # Health & Info Endpoints
 # =============================================================================
@@ -121,8 +150,10 @@ async def health_check() -> dict:
         "status": "healthy",
         "clip_model": settings.clip_model,
         "clap_model": settings.clap_model,
+        "colpali_model": settings.colpali_model,
         "indexed_images": db.count_images(),
         "indexed_audio": db.count_audio(),
+        "indexed_pdfs": db.count_pdfs(),
     }
 
 
@@ -132,6 +163,7 @@ async def get_suggestions() -> dict:
     return {
         "image_suggestions": settings.image_suggestions,
         "audio_suggestions": settings.audio_suggestions,
+        "pdf_suggestions": settings.pdf_suggestions,
     }
 
 
@@ -255,7 +287,58 @@ async def list_audio(limit: int = settings.default_limit) -> list[ItemInfo]:
 
 
 # =============================================================================
-# Static Files
+# PDF Search Endpoints
+# =============================================================================
+
+@app.post("/api/search/pdf/text", response_model=PDFSearchResponse)
+async def search_pdfs_by_text(request: TextSearchRequest) -> PDFSearchResponse:
+    """Search PDF pages using a text query with ColPali."""
+    encoder = get_colpali_encoder()
+    db = get_db()
+
+    # Encode query text
+    query_vector = encoder.encode_text([request.query])[0]
+
+    # Search PDFs
+    results = db.search_pdfs(query_vector, limit=min(request.limit, settings.max_limit))
+
+    return PDFSearchResponse(
+        results=[PDFSearchResult(**r) for r in results],
+        query_type="text_to_pdf",
+    )
+
+
+@app.get("/api/pdfs", response_model=list[PDFSearchResult])
+async def list_pdfs(limit: int = settings.default_limit) -> list[PDFSearchResult]:
+    """List all indexed PDF pages."""
+    db = get_db()
+    pdfs = db.get_all_pdfs(limit=min(limit, settings.max_limit))
+    return [PDFSearchResult(**p) for p in pdfs]
+
+
+# =============================================================================
+# Frontend Routes
+# =============================================================================
+
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    """Serve the main frontend page."""
+    return FileResponse("frontend/index.html")
+
+@app.get("/{page}.html", include_in_schema=False)
+async def serve_pages(page: str):
+    """Serve frontend HTML pages."""
+    file_path = Path(f"frontend/{page}.html")
+    if file_path.exists():
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="Page not found")
+
+# Mount frontend static files (CSS, JS)
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+
+
+# =============================================================================
+# Static Files (Media)
 # =============================================================================
 
 if settings.image_dir.exists():
@@ -263,3 +346,6 @@ if settings.image_dir.exists():
 
 if settings.audio_dir.exists():
     app.mount("/audio", StaticFiles(directory=settings.audio_dir), name="audio")
+
+if settings.pdf_image_dir.exists():
+    app.mount("/pdf_images", StaticFiles(directory=settings.pdf_image_dir), name="pdf_images")

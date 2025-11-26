@@ -1,4 +1,4 @@
-"""Qdrant vector database client for images and audio."""
+"""Qdrant vector database client for images, audio, and PDFs."""
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -10,6 +10,7 @@ from qdrant_client.models import (
     MatchValue,
 )
 import numpy as np
+import torch
 
 from .config import settings
 
@@ -42,6 +43,15 @@ class VectorDB:
     def create_audio_collection(self) -> None:
         """Create the audio collection."""
         self.create_collection(settings.audio_collection, settings.clap_embedding_dim)
+
+    def create_pdf_collection(self, embedding_dim: int = 16384) -> None:
+        """Create the PDF collection with ColPali embeddings.
+
+        Args:
+            embedding_dim: Dimension of flattened ColPali multi-vector embeddings.
+                          Default is 128 * 128 = 16384 (num_tokens * embedding_dim_per_token)
+        """
+        self.create_collection(settings.pdf_collection, embedding_dim)
     
     def add_items(
         self,
@@ -75,6 +85,21 @@ class VectorDB:
     def add_audio(self, ids: list[str], embeddings: np.ndarray, payloads: list[dict]) -> None:
         """Add audio embeddings."""
         self.add_items(settings.audio_collection, ids, embeddings, payloads)
+
+    def add_pdfs(self, ids: list[str], embeddings: torch.Tensor, payloads: list[dict]) -> None:
+        """Add PDF page embeddings (ColPali multi-vector).
+
+        Args:
+            ids: List of page IDs (e.g., "doc1_page0", "doc1_page1")
+            embeddings: Multi-vector embeddings [num_pages, num_tokens, embedding_dim]
+            payloads: Metadata for each page
+        """
+        # Flatten multi-vector embeddings to single vectors
+        # Shape: [num_pages, num_tokens, embedding_dim] -> [num_pages, num_tokens * embedding_dim]
+        batch_size = embeddings.shape[0]
+        embeddings_np = embeddings.reshape(batch_size, -1).numpy()
+
+        self.add_items(settings.pdf_collection, ids, embeddings_np, payloads)
     
     def search(
         self,
@@ -90,9 +115,9 @@ class VectorDB:
                 must=[FieldCondition(key="category", match=MatchValue(value=category))]
             )
         
-        results = self.client.search(
+        results = self.client.query_points(
             collection_name=collection,
-            query_vector=query_vector.tolist(),
+            query=query_vector.tolist(),
             limit=limit,
             query_filter=query_filter,
         )
@@ -106,7 +131,7 @@ class VectorDB:
                 "category": hit.payload.get("category"),
                 "duration": hit.payload.get("duration"),  # For audio
             }
-            for hit in results
+            for hit in results.points if hit.payload is not None
         ]
     
     def search_images(self, query_vector: np.ndarray, limit: int = settings.default_limit) -> list[dict]:
@@ -116,6 +141,27 @@ class VectorDB:
     def search_audio(self, query_vector: np.ndarray, limit: int = settings.default_limit) -> list[dict]:
         """Search audio."""
         return self.search(settings.audio_collection, query_vector, limit)
+
+    def search_pdfs(self, query_vector: torch.Tensor, limit: int = settings.default_limit) -> list[dict]:
+        """Search PDF pages using ColPali multi-vector embeddings.
+
+        Args:
+            query_vector: Multi-vector query embedding [num_tokens, embedding_dim]
+            limit: Maximum number of results
+
+        Returns:
+            List of matching PDF pages with scores and metadata
+        """
+        # Flatten multi-vector query to single vector
+        query_flat = query_vector.reshape(-1).numpy()
+        results = self.search(settings.pdf_collection, query_flat, limit)
+
+        # Add page_number field to results if not present
+        for result in results:
+            if "page_number" not in result:
+                result["page_number"] = result.get("page", 0)
+
+        return results
     
     def get_all_items(self, collection: str, limit: int = settings.max_limit) -> list[dict]:
         """Get all items from a collection."""
@@ -134,7 +180,7 @@ class VectorDB:
                 "category": point.payload.get("category"),
                 "duration": point.payload.get("duration"),
             }
-            for point in results
+            for point in results if point.payload is not None
         ]
     
     def get_all_images(self, limit: int = settings.max_limit) -> list[dict]:
@@ -144,6 +190,10 @@ class VectorDB:
     def get_all_audio(self, limit: int = settings.max_limit) -> list[dict]:
         """Get all indexed audio."""
         return self.get_all_items(settings.audio_collection, limit)
+
+    def get_all_pdfs(self, limit: int = settings.max_limit) -> list[dict]:
+        """Get all indexed PDF pages."""
+        return self.get_all_items(settings.pdf_collection, limit)
     
     def get_embedding(self, collection: str, item_id: str) -> np.ndarray | None:
         """Get the embedding for a specific item."""
@@ -183,6 +233,10 @@ class VectorDB:
     def count_audio(self) -> int:
         """Get number of indexed audio clips."""
         return self.count(settings.audio_collection)
+
+    def count_pdfs(self) -> int:
+        """Get number of indexed PDF pages."""
+        return self.count(settings.pdf_collection)
 
 
 # Singleton instance

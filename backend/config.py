@@ -10,22 +10,30 @@ class Settings(BaseSettings):
     # CLIP Model settings (images + text)
     clip_model: str = "openai/clip-vit-base-patch32"
     clip_embedding_dim: int = 512
-    clip_device: str = "cuda:0"  # First GPU for CLIP
+    clip_device: str = "cpu" # "cuda:0"  # First GPU for CLIP
     
     # CLAP Model settings (audio + text)
     clap_model: str = "laion/clap-htsat-unfused"
     clap_embedding_dim: int = 512
-    clap_device: str = "cuda:1"  # Second GPU for CLAP (or same as CLIP if only one)
-    
+    clap_device: str = "cpu" # "cuda:1"  # Second GPU for CLAP (or same as CLIP if only one)
+
+    # ColPali Model settings (PDF + text)
+    colpali_model: str = "vidore/colpali-v1.2"
+    colpali_embedding_dim: int = 128  # ColPali uses multi-vector embeddings
+    colpali_device: str = "cpu"  # "cuda:0" for GPU
+
     # Qdrant settings
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     image_collection: str = "images"
     audio_collection: str = "audio"
-    
+    pdf_collection: str = "pdfs"
+
     # Data settings
     image_dir: Path = Path("data/images")
     audio_dir: Path = Path("data/audio")
+    pdf_dir: Path = Path("data/pdfs")
+    pdf_image_dir: Path = Path("data/pdf_images")  # Rendered page thumbnails
     
     # Search settings
     default_limit: int = 50
@@ -50,6 +58,15 @@ class Settings(BaseSettings):
         "piano music",
         "thunder and lightning",
         "ocean waves crashing",
+    ]
+
+    pdf_suggestions: list[str] = [
+        "how to assemble a drawer",
+        "installation instructions for shelves",
+        "tools required for assembly",
+        "screw and bolt specifications",
+        "safety warnings and precautions",
+        "exploded view diagram",
     ]
     
     class Config:

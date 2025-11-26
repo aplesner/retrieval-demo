@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text → PDF Search | Multimodal Retrieval Demo</title>
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        .pdf-result {
+            position: relative;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .pdf-result:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .pdf-thumbnail {
+            width: 100%;
+            aspect-ratio: 210 / 297; /* A4 ratio */
+            object-fit: cover;
+            background: #f5f5f5;
+        }
+
+        .pdf-info {
+            padding: 12px;
+        }
+
+        .pdf-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .pdf-meta {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .pdf-score {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .page-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body data-mode="pdf">
+    <header>
+        <h1>Multimodal Retrieval Demo</h1>
+        <nav>
+            <a href="index.html">Text → Image</a>
+            <a href="image-search.html">Image → Image</a>
+            <a href="multimodal.html">Text + Image</a>
+            <a href="audio-search.html">Text → Audio</a>
+            <a href="pdf-search.html" class="active">Text → PDF</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="search-section">
+            <div class="search-row">
+                <div class="search-input-wrapper">
+                    <input
+                        type="text"
+                        id="search-input"
+                        class="search-input"
+                        placeholder="Search through PDF documents..."
+                        autocomplete="off"
+                    >
+                </div>
+                <button id="search-btn" class="search-btn">Search</button>
+            </div>
+            <div id="suggestions" class="suggestions"></div>
+        </section>
+
+        <section class="results-section">
+            <div class="results-header">
+                <h2>Results</h2>
+                <span id="results-count" class="results-count"></span>
+            </div>
+            <div id="results-grid" class="image-grid"></div>
+        </section>
+    </main>
+
+    <div id="status" class="status">
+        <div class="status-dot"></div>
+        <span>Connecting...</span>
+    </div>
+
+    <script src="static/app.js"></script>
+    <script>
+        // PDF-specific search functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchInput = document.getElementById('search-input');
+            const searchBtn = document.getElementById('search-btn');
+            const resultsGrid = document.getElementById('results-grid');
+            const resultsCount = document.getElementById('results-count');
+            const suggestionsDiv = document.getElementById('suggestions');
+
+            // Load PDF suggestions
+            fetchSuggestions();
+
+            // Search handler
+            async function performSearch() {
+                const query = searchInput.value.trim();
+                if (!query) return;
+
+                try {
+                    resultsGrid.innerHTML = '<div class="loading">Searching PDFs...</div>';
+                    resultsCount.textContent = '';
+
+                    const response = await fetch(`${API_BASE}/api/search/pdf/text`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query, limit: 50 })
+                    });
+
+                    if (!response.ok) throw new Error('Search failed');
+
+                    const data = await response.json();
+                    displayResults(data.results);
+
+                } catch (error) {
+                    console.error('Search error:', error);
+                    resultsGrid.innerHTML = '<div class="error">Search failed. Please try again.</div>';
+                }
+            }
+
+            function displayResults(results) {
+                resultsCount.textContent = `${results.length} pages found`;
+
+                if (results.length === 0) {
+                    resultsGrid.innerHTML = '<div class="no-results">No matching PDF pages found</div>';
+                    return;
+                }
+
+                resultsGrid.innerHTML = results.map(result => `
+                    <div class="pdf-result">
+                        <div class="pdf-score">${(result.score * 100).toFixed(1)}%</div>
+                        <img
+                            src="${API_BASE}${result.path}"
+                            alt="${result.filename} - Page ${result.page_number + 1}"
+                            class="pdf-thumbnail"
+                            loading="lazy"
+                        >
+                        <div class="pdf-info">
+                            <div class="pdf-title">${result.filename}</div>
+                            <div class="pdf-meta">
+                                <span class="page-badge">Page ${result.page_number + 1}/${result.total_pages}</span>
+                                <span>${result.pdf_name}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            async function fetchSuggestions() {
+                try {
+                    const response = await fetch(`${API_BASE}/api/suggestions`);
+                    const data = await response.json();
+
+                    if (data.pdf_suggestions && data.pdf_suggestions.length > 0) {
+                        suggestionsDiv.innerHTML = data.pdf_suggestions.map(suggestion =>
+                            `<span class="suggestion-chip" onclick="document.getElementById('search-input').value='${suggestion}'; document.getElementById('search-btn').click();">${suggestion}</span>`
+                        ).join('');
+                    }
+                } catch (error) {
+                    console.error('Failed to load suggestions:', error);
+                }
+            }
+
+            // Event listeners
+            searchBtn.addEventListener('click', performSearch);
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') performSearch();
+            });
+        });
+    </script>
+</body>
+</html>

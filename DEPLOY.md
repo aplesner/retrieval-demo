@@ -32,7 +32,7 @@ make index
 make run
 ```
 
-Open http://your-server:8000 in your browser.
+Open http://your-server:8080 in your browser.
 
 ---
 
@@ -116,10 +116,10 @@ python scripts/index_audio.py --device cuda:1
 
 ```bash
 # Production
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 0.0.0.0 --port 8080
 
 # Development (auto-reload)
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn backend.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 ---
@@ -157,7 +157,7 @@ Type=simple
 User=your-user
 WorkingDirectory=/path/to/retrieval-demo
 Environment="PATH=/path/to/retrieval-demo/venv/bin"
-ExecStart=/path/to/retrieval-demo/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+ExecStart=/path/to/retrieval-demo/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8080
 Restart=always
 RestartSec=10
 
@@ -186,7 +186,7 @@ server {
 
     # API proxy
     location /api/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -251,7 +251,7 @@ Ensure audio files are in a supported format (WAV, MP3, OGG).
 
 ```bash
 # Convert to WAV if needed
-ffmpeg -i input.flac -ar 48000 -ac 1 output.wav
+ffmpeg -i input.flac -ar 48080 -ac 1 output.wav
 ```
 
 ### Model download fails
