@@ -108,7 +108,7 @@ class CLAPEncoder:
             resampled.append(audio)
         
         inputs = self.processor(
-            audios=resampled,
+            audio=resampled,
             sampling_rate=self.sample_rate,
             return_tensors="pt",
             padding=True,

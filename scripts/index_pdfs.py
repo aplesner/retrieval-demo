@@ -63,6 +63,7 @@ def index_pdfs(data_dir: Path, recreate: bool = False) -> None:
 
     # Sort PDF files for consistent processing order
     pdf_files.sort()
+    pdf_files = pdf_files[:2]
 
     logger.info(f"Found {len(pdf_files)} PDF files ({pdf_files[0]} ... {pdf_files[-1]})")
 

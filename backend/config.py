@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # CLAP Model settings (audio + text)
     clap_model: str = "laion/clap-htsat-unfused"
     clap_embedding_dim: int = 512
-    clap_device: str = "cuda:1"  # GPU 1 with CLIP (smaller models)
+    clap_device: str = "cuda:0"  # GPU 1 with CLIP (smaller models)
 
     # ColPali Model settings (PDF + text)
     colpali_model: str = "vidore/colpali-v1.2"
