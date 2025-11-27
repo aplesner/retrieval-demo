@@ -136,7 +136,7 @@ def main():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=8,
+        default=64,
         help="Batch size for encoding (smaller for audio due to memory)",
     )
     parser.add_argument(

@@ -2,6 +2,7 @@
 """Index PDF documents using ColPali for retrieval."""
 
 import argparse
+import logging
 from pathlib import Path
 import sys
 
@@ -15,6 +16,11 @@ from backend.config import settings
 from backend.database import get_db
 from backend.models import get_colpali_encoder
 
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO  # Set level to INFO to see logger.info() messages
+)
+logger = logging.getLogger(__name__)
 
 def index_pdfs(data_dir: Path, recreate: bool = False) -> None:
     """Index PDF files using ColPali.
@@ -34,8 +40,10 @@ def index_pdfs(data_dir: Path, recreate: bool = False) -> None:
     print("Determining embedding dimensions...")
     test_img = Image.new("RGB", (224, 224), color="white")
     test_emb = encoder.encode_pdf_page([test_img])
-    embedding_dim = test_emb.shape[1] * test_emb.shape[2]  # num_tokens * embedding_dim_per_token
-    print(f"Embedding dimension: {embedding_dim}")
+    embedding_dim = test_emb.shape[2]  # embedding_dim_per_token (multivector approach)
+    print(f"Embedding dimension per token: {embedding_dim}")
+    print(f"Number of tokens: {test_emb.shape[1]}")
+    print(f"Using multivector configuration with MaxSim")
 
     # Create collection
     if recreate:
@@ -53,7 +61,10 @@ def index_pdfs(data_dir: Path, recreate: bool = False) -> None:
         print(f"No PDF files found in {data_dir}")
         return
 
-    print(f"Found {len(pdf_files)} PDF files")
+    # Sort PDF files for consistent processing order
+    pdf_files.sort()
+
+    logger.info(f"Found {len(pdf_files)} PDF files ({pdf_files[0]} ... {pdf_files[-1]})")
 
     # Create output directory for page images
     output_dir = settings.pdf_image_dir
@@ -70,7 +81,6 @@ def index_pdfs(data_dir: Path, recreate: bool = False) -> None:
             pdf_name = pdf_path.stem
             ids = []
             payloads = []
-
             for page_num, page_img in enumerate(page_images):
                 page_id = f"{pdf_name}_page{page_num}"
                 ids.append(page_id)
@@ -89,15 +99,16 @@ def index_pdfs(data_dir: Path, recreate: bool = False) -> None:
                     "total_pages": len(page_images),
                 })
 
+            logger.info(f"Adding {len(page_images)} pages from {pdf_path.name} to database...")
             # Add to database
             db.add_pdfs(ids, embeddings, payloads)
             total_pages += len(page_images)
 
         except Exception as e:
-            print(f"\nError processing {pdf_path}: {e}")
-            continue
+            logger.error(f"Error processing {pdf_path}: {e}")
+            raise e
 
-    print(f"\n✓ Indexed {total_pages} pages from {len(pdf_files)} PDFs")
+    logger.info(f"✓ Indexed {total_pages} pages from {len(pdf_files)} PDFs")
     print(f"  Collection: {settings.pdf_collection}")
     print(f"  Total pages in database: {db.count_pdfs()}")
 

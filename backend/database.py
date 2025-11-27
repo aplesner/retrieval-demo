@@ -8,6 +8,8 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    MultiVectorConfig,
+    MultiVectorComparator,
 )
 import numpy as np
 import torch
@@ -23,7 +25,8 @@ class VectorDB:
         host: str = settings.qdrant_host,
         port: int = settings.qdrant_port,
     ):
-        self.client = QdrantClient(host=host, port=port)
+        # Set timeout to 300 seconds (5 minutes) to handle large PDF uploads
+        self.client = QdrantClient(host=host, port=port, timeout=300)
     
     def create_collection(self, name: str, dim: int) -> None:
         """Create collection if it doesn't exist."""
@@ -44,14 +47,27 @@ class VectorDB:
         """Create the audio collection."""
         self.create_collection(settings.audio_collection, settings.clap_embedding_dim)
 
-    def create_pdf_collection(self, embedding_dim: int = 16384) -> None:
-        """Create the PDF collection with ColPali embeddings.
+    def create_pdf_collection(self, embedding_dim: int = 128) -> None:
+        """Create the PDF collection with ColPali multi-vector embeddings.
 
         Args:
-            embedding_dim: Dimension of flattened ColPali multi-vector embeddings.
-                          Default is 128 * 128 = 16384 (num_tokens * embedding_dim_per_token)
+            embedding_dim: Dimension of each token embedding (default: 128).
+                          Uses multivector configuration with MaxSim comparator.
         """
-        self.create_collection(settings.pdf_collection, embedding_dim)
+        collections = self.client.get_collections().collections
+        exists = any(c.name == settings.pdf_collection for c in collections)
+
+        if not exists:
+            self.client.create_collection(
+                collection_name=settings.pdf_collection,
+                vectors_config=VectorParams(
+                    size=embedding_dim,
+                    distance=Distance.COSINE,
+                    multivector_config=MultiVectorConfig(
+                        comparator=MultiVectorComparator.MAX_SIM
+                    ),
+                ),
+            )
     
     def add_items(
         self,
@@ -94,12 +110,33 @@ class VectorDB:
             embeddings: Multi-vector embeddings [num_pages, num_tokens, embedding_dim]
             payloads: Metadata for each page
         """
-        # Flatten multi-vector embeddings to single vectors
-        # Shape: [num_pages, num_tokens, embedding_dim] -> [num_pages, num_tokens * embedding_dim]
-        batch_size = embeddings.shape[0]
-        embeddings_np = embeddings.reshape(batch_size, -1).numpy()
+        # Preserve multi-vector structure for MaxSim scoring
+        # Each page has multiple token vectors: [num_tokens, embedding_dim]
+        points = []
+        for idx, (item_id, emb, payload) in enumerate(zip(ids, embeddings, payloads)):
+            # Convert to list of vectors (keeping token-level structure)
+            multi_vector = emb.numpy().tolist()  # [num_tokens, embedding_dim]
+            # Use hash of item_id to generate unique numeric ID across all PDFs
+            # (enumerate idx resets to 0 for each PDF, causing ID collisions!)
+            unique_id = hash(item_id) & 0x7FFFFFFF  # Convert to positive 32-bit int
+            points.append(
+                PointStruct(
+                    id=unique_id,
+                    vector=multi_vector,  # List of vectors for multivector support
+                    payload={"item_id": item_id, **payload},
+                )
+            )
 
-        self.add_items(settings.pdf_collection, ids, embeddings_np, payloads)
+        # Upsert in smaller batches to avoid timeouts with large PDFs
+        # Each page has ~130KB of data (1030 tokens × 128 dims × 4 bytes)
+        # 10 pages = ~1.3 MB per batch
+        batch_size = 10
+        from tqdm import tqdm
+        for i in tqdm(range(0, len(points), batch_size), desc="Uploading batches", disable=len(points) <= batch_size):
+            self.client.upsert(
+                collection_name=settings.pdf_collection,
+                points=points[i : i + batch_size],
+            )
     
     def search(
         self,
@@ -143,7 +180,7 @@ class VectorDB:
         return self.search(settings.audio_collection, query_vector, limit)
 
     def search_pdfs(self, query_vector: torch.Tensor, limit: int = settings.default_limit) -> list[dict]:
-        """Search PDF pages using ColPali multi-vector embeddings.
+        """Search PDF pages using ColPali multi-vector embeddings with MaxSim.
 
         Args:
             query_vector: Multi-vector query embedding [num_tokens, embedding_dim]
@@ -152,16 +189,28 @@ class VectorDB:
         Returns:
             List of matching PDF pages with scores and metadata
         """
-        # Flatten multi-vector query to single vector
-        query_flat = query_vector.reshape(-1).numpy()
-        results = self.search(settings.pdf_collection, query_flat, limit)
+        # Preserve multi-vector query structure for MaxSim scoring
+        query_multi = query_vector.numpy().tolist()  # [num_tokens, embedding_dim]
 
-        # Add page_number field to results if not present
-        for result in results:
-            if "page_number" not in result:
-                result["page_number"] = result.get("page", 0)
+        results = self.client.query_points(
+            collection_name=settings.pdf_collection,
+            query=query_multi,  # Pass as list of vectors
+            limit=limit,
+        )
 
-        return results
+        search_results = [
+            {
+                "id": hit.payload.get("item_id"),
+                "score": hit.score,
+                "filename": hit.payload.get("filename"),
+                "path": hit.payload.get("path"),
+                "category": hit.payload.get("category"),
+                "page_number": hit.payload.get("page_number", hit.payload.get("page", 0)),
+            }
+            for hit in results.points if hit.payload is not None
+        ]
+
+        return search_results
     
     def get_all_items(self, collection: str, limit: int = settings.max_limit) -> list[dict]:
         """Get all items from a collection."""

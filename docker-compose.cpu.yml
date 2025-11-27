@@ -1,3 +1,7 @@
+# Standalone CPU-only compose file (no GPU requirements)
+# Use this when NVIDIA GPU is not available
+# Usage: docker-compose -f docker-compose.cpu.yml up -d
+
 services:
   qdrant:
     image: qdrant/qdrant:latest
@@ -19,7 +23,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: backend/Dockerfile.cpu
     container_name: retrieval-backend
     ports:
       - "8080:8080"
@@ -35,25 +39,15 @@ services:
       # Qdrant connection
       - RETRIEVAL_QDRANT_HOST=qdrant
       - RETRIEVAL_QDRANT_PORT=6333
-      # GPU settings (falls back to CPU if unavailable)
-      - RETRIEVAL_CLIP_DEVICE=cuda:1
-      - RETRIEVAL_CLAP_DEVICE=cuda:1
-      - RETRIEVAL_COLPALI_DEVICE=cuda:0
-      # NVIDIA settings (ignored if no GPU)
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # CPU settings (no GPU)
+      - RETRIEVAL_CLIP_DEVICE=cpu
+      - RETRIEVAL_CLAP_DEVICE=cpu
+      - RETRIEVAL_COLPALI_DEVICE=cpu
     depends_on:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
-    # GPU support (requires nvidia-docker):
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # No deploy/GPU configuration
 
   # Optional: Nginx reverse proxy for production
   nginx:

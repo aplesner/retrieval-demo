@@ -123,7 +123,7 @@ def main():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=16,
+        default=64,
         help="Batch size for encoding",
     )
     parser.add_argument(

@@ -1,7 +1,7 @@
 # Multimodal Retrieval Demo - Makefile
 # Usage: make <target>
 
-.PHONY: help setup install run dev index index-images index-audio download clean stop logs docker-build docker-up docker-down docker-restart docker-logs docker-clean docker-up-prod
+.PHONY: help setup install run dev index index-images index-audio download clean stop logs docker-build docker-up docker-down docker-restart docker-logs docker-clean docker-up-prod docker-build-cpu docker-up-cpu docker-up-prod-cpu
 
 # Default target
 help:
@@ -33,14 +33,21 @@ help:
 	@echo "  logs           - Show Qdrant logs"
 	@echo "  clean          - Remove generated files"
 	@echo ""
-	@echo "Docker (Recommended):"
-	@echo "  docker-build   - Build Docker images"
-	@echo "  docker-up      - Start all services (single command!)"
-	@echo "  docker-down    - Stop all services"
-	@echo "  docker-restart - Restart all services"
-	@echo "  docker-logs    - Show logs from all services"
-	@echo "  docker-clean   - Stop and remove all containers/volumes"
-	@echo "  docker-up-prod - Start with nginx reverse proxy"
+	@echo "Docker (GPU - Recommended if available):"
+	@echo "  docker-build       - Build Docker images (GPU)"
+	@echo "  docker-up          - Start all services (GPU)"
+	@echo "  docker-up-prod     - Start with nginx reverse proxy (GPU)"
+	@echo ""
+	@echo "Docker (CPU - Use when GPU unavailable):"
+	@echo "  docker-build-cpu   - Build Docker images (CPU-only)"
+	@echo "  docker-up-cpu      - Start all services (CPU-only)"
+	@echo "  docker-up-prod-cpu - Start with nginx reverse proxy (CPU-only)"
+	@echo ""
+	@echo "Docker (Common):"
+	@echo "  docker-down        - Stop all services"
+	@echo "  docker-restart     - Restart all services"
+	@echo "  docker-logs        - Show logs from all services"
+	@echo "  docker-clean       - Stop and remove all containers/volumes"
 
 # Python interpreter
 PYTHON = python3
@@ -80,6 +87,9 @@ index-audio:
 
 index-pdfs:
 	$(PYTHON_VENV) scripts/index_pdfs.py --data-dir data/pdfs
+
+count-database:
+	$(PYTHON_VENV) scripts/count_database.py
 
 # Downloads
 download: download-coco download-ikea download-esc50  download-sample
@@ -145,4 +155,18 @@ docker-clean:
 docker-up-prod:
 	docker-compose --profile production up -d
 	@echo "Services started with nginx reverse proxy"
+	@echo "Access at http://localhost (port 80)"
+
+# CPU-only Docker targets (for systems without GPU/nvidia-docker)
+docker-build-cpu:
+	docker-compose -f docker-compose.cpu.yml build
+
+docker-up-cpu:
+	docker-compose -f docker-compose.cpu.yml up -d
+	@echo "Waiting for services to be healthy (CPU mode - may be slower on first run)..."
+	@timeout 180 sh -c 'until curl -sf http://localhost:8080/api/health > /dev/null 2>&1; do sleep 3; done' && echo "✓ Services are ready! Access at http://localhost:8080" || echo "✗ Services failed to start after 3 minutes"
+
+docker-up-prod-cpu:
+	docker-compose -f docker-compose.cpu.yml --profile production up -d
+	@echo "Services started with nginx reverse proxy (CPU mode)"
 	@echo "Access at http://localhost (port 80)"

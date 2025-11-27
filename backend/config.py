@@ -10,17 +10,17 @@ class Settings(BaseSettings):
     # CLIP Model settings (images + text)
     clip_model: str = "openai/clip-vit-base-patch32"
     clip_embedding_dim: int = 512
-    clip_device: str = "cpu" # "cuda:0"  # First GPU for CLIP
-    
+    clip_device: str = "cuda:1"  # GPU 1 with CLAP (smaller models)
+
     # CLAP Model settings (audio + text)
     clap_model: str = "laion/clap-htsat-unfused"
     clap_embedding_dim: int = 512
-    clap_device: str = "cpu" # "cuda:1"  # Second GPU for CLAP (or same as CLIP if only one)
+    clap_device: str = "cuda:1"  # GPU 1 with CLIP (smaller models)
 
     # ColPali Model settings (PDF + text)
     colpali_model: str = "vidore/colpali-v1.2"
     colpali_embedding_dim: int = 128  # ColPali uses multi-vector embeddings
-    colpali_device: str = "cpu"  # "cuda:0" for GPU
+    colpali_device: str = "cuda:0"  # GPU for ColPali
 
     # Qdrant settings
     qdrant_host: str = "localhost"

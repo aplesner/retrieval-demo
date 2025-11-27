@@ -110,94 +110,96 @@
         <span>Connecting...</span>
     </div>
 
-    <script src="static/app.js"></script>
+    <script src="static/config.js"></script>
     <script>
-        // PDF-specific search functionality
-        document.addEventListener('DOMContentLoaded', () => {
-            const searchInput = document.getElementById('search-input');
-            const searchBtn = document.getElementById('search-btn');
-            const resultsGrid = document.getElementById('results-grid');
-            const resultsCount = document.getElementById('results-count');
-            const suggestionsDiv = document.getElementById('suggestions');
+        (function() {
+            // PDF-specific search functionality
+            document.addEventListener('DOMContentLoaded', () => {
+                const searchInput = document.getElementById('search-input');
+                const searchBtn = document.getElementById('search-btn');
+                const resultsGrid = document.getElementById('results-grid');
+                const resultsCount = document.getElementById('results-count');
+                const suggestionsDiv = document.getElementById('suggestions');
 
-            // Load PDF suggestions
-            fetchSuggestions();
+                // Load PDF suggestions
+                fetchSuggestions();
 
-            // Search handler
-            async function performSearch() {
-                const query = searchInput.value.trim();
-                if (!query) return;
+                // Search handler
+                async function performSearch() {
+                    const query = searchInput.value.trim();
+                    if (!query) return;
 
-                try {
-                    resultsGrid.innerHTML = '<div class="loading">Searching PDFs...</div>';
-                    resultsCount.textContent = '';
+                    try {
+                        resultsGrid.innerHTML = '<div class="loading">Searching PDFs...</div>';
+                        resultsCount.textContent = '';
 
-                    const response = await fetch(`${API_BASE}/api/search/pdf/text`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query, limit: 50 })
-                    });
+                        const response = await fetch(`${API_BASE}/api/search/pdf/text`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query, limit: 50 })
+                        });
 
-                    if (!response.ok) throw new Error('Search failed');
+                        if (!response.ok) throw new Error('Search failed');
 
-                    const data = await response.json();
-                    displayResults(data.results);
+                        const data = await response.json();
+                        displayResults(data.results);
 
-                } catch (error) {
-                    console.error('Search error:', error);
-                    resultsGrid.innerHTML = '<div class="error">Search failed. Please try again.</div>';
-                }
-            }
-
-            function displayResults(results) {
-                resultsCount.textContent = `${results.length} pages found`;
-
-                if (results.length === 0) {
-                    resultsGrid.innerHTML = '<div class="no-results">No matching PDF pages found</div>';
-                    return;
+                    } catch (error) {
+                        console.error('Search error:', error);
+                        resultsGrid.innerHTML = '<div class="error">Search failed. Please try again.</div>';
+                    }
                 }
 
-                resultsGrid.innerHTML = results.map(result => `
-                    <div class="pdf-result">
-                        <div class="pdf-score">${(result.score * 100).toFixed(1)}%</div>
-                        <img
-                            src="${API_BASE}${result.path}"
-                            alt="${result.filename} - Page ${result.page_number + 1}"
-                            class="pdf-thumbnail"
-                            loading="lazy"
-                        >
-                        <div class="pdf-info">
-                            <div class="pdf-title">${result.filename}</div>
-                            <div class="pdf-meta">
-                                <span class="page-badge">Page ${result.page_number + 1}/${result.total_pages}</span>
-                                <span>${result.pdf_name}</span>
+                function displayResults(results) {
+                    resultsCount.textContent = `${results.length} pages found`;
+
+                    if (results.length === 0) {
+                        resultsGrid.innerHTML = '<div class="no-results">No matching PDF pages found</div>';
+                        return;
+                    }
+
+                    resultsGrid.innerHTML = results.map(result => `
+                        <div class="pdf-result">
+                            <div class="pdf-score">${(result.score * 100).toFixed(1)}%</div>
+                            <img
+                                src="${API_BASE}${result.path}"
+                                alt="${result.filename} - Page ${result.page_number + 1}"
+                                class="pdf-thumbnail"
+                                loading="lazy"
+                            >
+                            <div class="pdf-info">
+                                <div class="pdf-title">${result.filename}</div>
+                                <div class="pdf-meta">
+                                    <span class="page-badge">Page ${result.page_number + 1}/${result.total_pages}</span>
+                                    <span>${result.pdf_name}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `).join('');
-            }
-
-            async function fetchSuggestions() {
-                try {
-                    const response = await fetch(`${API_BASE}/api/suggestions`);
-                    const data = await response.json();
-
-                    if (data.pdf_suggestions && data.pdf_suggestions.length > 0) {
-                        suggestionsDiv.innerHTML = data.pdf_suggestions.map(suggestion =>
-                            `<span class="suggestion-chip" onclick="document.getElementById('search-input').value='${suggestion}'; document.getElementById('search-btn').click();">${suggestion}</span>`
-                        ).join('');
-                    }
-                } catch (error) {
-                    console.error('Failed to load suggestions:', error);
+                    `).join('');
                 }
-            }
 
-            // Event listeners
-            searchBtn.addEventListener('click', performSearch);
-            searchInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') performSearch();
+                async function fetchSuggestions() {
+                    try {
+                        const response = await fetch(`${API_BASE}/api/suggestions`);
+                        const data = await response.json();
+
+                        if (data.pdf_suggestions && data.pdf_suggestions.length > 0) {
+                            suggestionsDiv.innerHTML = data.pdf_suggestions.map(suggestion =>
+                                `<span class="suggestion-chip" onclick="document.getElementById('search-input').value='${suggestion}'; document.getElementById('search-btn').click();">${suggestion}</span>`
+                            ).join('');
+                        }
+                    } catch (error) {
+                        console.error('Failed to load suggestions:', error);
+                    }
+                }
+
+                // Event listeners
+                searchBtn.addEventListener('click', performSearch);
+                searchInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') performSearch();
+                });
             });
-        });
+        })();
     </script>
 </body>
 </html>

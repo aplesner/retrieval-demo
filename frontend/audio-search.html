@@ -116,151 +116,156 @@
         <div class="status-dot"></div>
         <span>Connecting...</span>
     </div>
-    
+
+    <script src="static/config.js"></script>
     <script>
-        const API_BASE = 'http://localhost:8000';
-        let allAudio = [];
-        let selectedAudioId = null;
-        let isLoading = false;
-        
-        async function init() {
-            document.getElementById('search-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') handleSearch();
-            });
-            document.getElementById('search-btn').addEventListener('click', handleSearch);
-            
-            await checkHealth();
-            await loadSuggestions();
-            await loadAllAudio();
-        }
-        
-        async function checkHealth() {
-            try {
-                const res = await fetch(`${API_BASE}/api/health`);
-                const data = await res.json();
-                updateStatus(true, `${data.indexed_audio} audio clips indexed`);
-            } catch (err) {
-                updateStatus(false, 'Backend unavailable');
-            }
-        }
-        
-        async function loadSuggestions() {
-            try {
-                const res = await fetch(`${API_BASE}/api/suggestions`);
-                const data = await res.json();
-                
-                const chips = data.audio_suggestions.map(s => 
-                    `<button class="suggestion-chip" onclick="selectSuggestion('${s}')">${s}</button>`
-                ).join('');
-                
-                document.getElementById('suggestions').innerHTML = `
-                    <div class="suggestions-title">Try searching for:</div>
-                    <div class="suggestion-chips">${chips}</div>
-                `;
-            } catch (err) {
-                console.error('Failed to load suggestions:', err);
-            }
-        }
-        
-        async function loadAllAudio() {
-            try {
-                const res = await fetch(`${API_BASE}/api/audio?limit=100`);
-                allAudio = await res.json();
-                displayResults(allAudio.map(a => ({...a, score: null})));
-            } catch (err) {
-                console.error('Failed to load audio:', err);
-                displayError('Failed to load audio clips');
-            }
-        }
-        
-        async function handleSearch() {
-            const query = document.getElementById('search-input').value.trim();
-            if (!query) return;
-            
-            setLoading(true);
-            
-            try {
-                const res = await fetch(`${API_BASE}/api/search/audio/text`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({query, limit: 50})
+        (function() {
+            let allAudio = [];
+            let selectedAudioId = null;
+            let isLoading = false;
+
+            async function init() {
+                document.getElementById('search-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') handleSearch();
                 });
-                const data = await res.json();
-                displayResults(data.results);
-            } catch (err) {
-                console.error('Search failed:', err);
-                displayError('Search failed. Please try again.');
-            } finally {
-                setLoading(false);
+                document.getElementById('search-btn').addEventListener('click', handleSearch);
+
+                await checkHealth();
+                await loadSuggestions();
+                await loadAllAudio();
             }
-        }
-        
-        function displayResults(results) {
-            const grid = document.getElementById('results-grid');
-            const count = document.getElementById('results-count');
-            
-            count.textContent = `${results.length} results`;
-            
-            if (results.length === 0) {
-                grid.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
-                return;
+
+            async function checkHealth() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/health`);
+                    const data = await res.json();
+                    updateStatus(true, `${data.indexed_audio} audio clips indexed`);
+                } catch (err) {
+                    updateStatus(false, 'Backend unavailable');
+                }
             }
-            
-            grid.innerHTML = results.map(audio => `
-                <div class="audio-card" data-id="${audio.id}">
-                    <audio controls preload="metadata">
-                        <source src="${API_BASE}${audio.path}" type="audio/wav">
-                        Your browser does not support audio.
-                    </audio>
-                    <div class="audio-card-info">
-                        <div class="audio-card-name">${audio.filename}</div>
-                        <div class="audio-card-meta">
-                            ${audio.category ? `<span class="audio-card-category">${audio.category}</span>` : ''}
-                            ${audio.duration ? `<span>${audio.duration.toFixed(1)}s</span>` : ''}
-                            ${audio.score !== null ? `<span>Score: ${(audio.score * 100).toFixed(1)}%</span>` : ''}
+
+            async function loadSuggestions() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/suggestions`);
+                    const data = await res.json();
+
+                    const chips = data.audio_suggestions.map(s =>
+                        `<button class="suggestion-chip" onclick="selectSuggestion('${s}')">${s}</button>`
+                    ).join('');
+
+                    document.getElementById('suggestions').innerHTML = `
+                        <div class="suggestions-title">Try searching for:</div>
+                        <div class="suggestion-chips">${chips}</div>
+                    `;
+                } catch (err) {
+                    console.error('Failed to load suggestions:', err);
+                }
+            }
+
+            async function loadAllAudio() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/audio?limit=100`);
+                    allAudio = await res.json();
+                    displayResults(allAudio.map(a => ({...a, score: null})));
+                } catch (err) {
+                    console.error('Failed to load audio:', err);
+                    displayError('Failed to load audio clips');
+                }
+            }
+
+            async function handleSearch() {
+                const query = document.getElementById('search-input').value.trim();
+                if (!query) return;
+
+                setLoading(true);
+
+                try {
+                    const res = await fetch(`${API_BASE}/api/search/audio/text`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({query, limit: 50})
+                    });
+                    const data = await res.json();
+                    displayResults(data.results);
+                } catch (err) {
+                    console.error('Search failed:', err);
+                    displayError('Search failed. Please try again.');
+                } finally {
+                    setLoading(false);
+                }
+            }
+
+            function displayResults(results) {
+                const grid = document.getElementById('results-grid');
+                const count = document.getElementById('results-count');
+
+                count.textContent = `${results.length} results`;
+
+                if (results.length === 0) {
+                    grid.innerHTML = `<div class="empty-state"><p>No results found</p></div>`;
+                    return;
+                }
+
+                grid.innerHTML = results.map(audio => `
+                    <div class="audio-card" data-id="${audio.id}">
+                        <audio controls preload="metadata">
+                            <source src="${API_BASE}${audio.path}" type="audio/wav">
+                            Your browser does not support audio.
+                        </audio>
+                        <div class="audio-card-info">
+                            <div class="audio-card-name">${audio.filename}</div>
+                            <div class="audio-card-meta">
+                                ${audio.category ? `<span class="audio-card-category">${audio.category}</span>` : ''}
+                                ${audio.duration ? `<span>${audio.duration.toFixed(1)}s</span>` : ''}
+                                ${audio.score !== null ? `<span>Score: ${(audio.score * 100).toFixed(1)}%</span>` : ''}
+                            </div>
                         </div>
                     </div>
-                </div>
-            `).join('');
-        }
-        
-        function selectSuggestion(text) {
-            document.getElementById('search-input').value = text;
-            handleSearch();
-        }
-        
-        function setLoading(loading) {
-            isLoading = loading;
-            const btn = document.getElementById('search-btn');
-            btn.disabled = loading;
-            btn.textContent = loading ? 'Searching...' : 'Search';
-            
-            if (loading) {
+                `).join('');
+            }
+
+            function selectSuggestion(text) {
+                document.getElementById('search-input').value = text;
+                handleSearch();
+            }
+
+            function setLoading(loading) {
+                isLoading = loading;
+                const btn = document.getElementById('search-btn');
+                btn.disabled = loading;
+                btn.textContent = loading ? 'Searching...' : 'Search';
+
+                if (loading) {
+                    document.getElementById('results-grid').innerHTML = `
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Searching...</p>
+                        </div>
+                    `;
+                }
+            }
+
+            function displayError(message) {
                 document.getElementById('results-grid').innerHTML = `
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        <p>Searching...</p>
+                    <div class="empty-state">
+                        <p style="color: #ef4444;">${message}</p>
                     </div>
                 `;
             }
-        }
-        
-        function displayError(message) {
-            document.getElementById('results-grid').innerHTML = `
-                <div class="empty-state">
-                    <p style="color: #ef4444;">${message}</p>
-                </div>
-            `;
-        }
-        
-        function updateStatus(online, message) {
-            document.getElementById('status').innerHTML = `
-                <div class="status-dot" style="background: ${online ? '#10b981' : '#ef4444'}"></div>
-                <span>${message}</span>
-            `;
-        }
-        
-        document.addEventListener('DOMContentLoaded', init);
+
+            function updateStatus(online, message) {
+                document.getElementById('status').innerHTML = `
+                    <div class="status-dot" style="background: ${online ? '#10b981' : '#ef4444'}"></div>
+                    <span>${message}</span>
+                `;
+            }
+
+            // Expose selectSuggestion to global scope for onclick handlers
+            window.selectSuggestion = selectSuggestion;
+
+            document.addEventListener('DOMContentLoaded', init);
+        })();
     </script>
 </body>
 </html>

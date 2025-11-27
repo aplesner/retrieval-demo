@@ -4,10 +4,13 @@ import torch
 import numpy as np
 from PIL import Image
 from pathlib import Path
+from tqdm import tqdm
+import logging
 
 from .config import settings
 
-
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 # ============================================================================
 # CLIP Encoder (Text + Images)
 # ============================================================================
@@ -148,9 +151,24 @@ class ColPaliEncoder:
         from colpali_engine.models import ColPali, ColPaliProcessor
 
         self.device = device
+
+        # Use float32 for CPU, float16 for GPU (bfloat16 requires compute capability 8.0+)
+        if device == "cpu":
+            dtype = torch.float32
+        else:
+            # Check if GPU supports bfloat16 (compute capability 8.0+)
+            # GTX 1080 is compute capability 6.1, so use float16
+            gpu_idx = int(device.split(":")[-1]) if ":" in device else 0
+            compute_capability = torch.cuda.get_device_capability(gpu_idx)
+            if compute_capability[0] >= 8:
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float16
+
         self.model = ColPali.from_pretrained(
             model_name,
-            torch_dtype=torch.float32 if device == "cpu" else torch.bfloat16,
+            dtype=dtype,
+            device_map=device,
         ).to(device).eval()
         self.processor = ColPaliProcessor.from_pretrained(model_name)
 
@@ -177,14 +195,15 @@ class ColPaliEncoder:
         """
         batch_images = self.processor.process_images(images).to(self.device)
         embeddings = self.model(**batch_images)
-        return embeddings.cpu()
+        return embeddings
 
     @torch.no_grad()
-    def encode_pdf_from_path(self, pdf_path: Path) -> tuple[torch.Tensor, list[Image.Image]]:
+    def encode_pdf_from_path(self, pdf_path: Path, batch_size: int = 8) -> tuple[torch.Tensor, list[Image.Image]]:
         """Encode PDF file by converting pages to images and encoding them.
 
         Args:
             pdf_path: Path to PDF file
+            batch_size: Number of pages to process at once (default: 4 to avoid OOM)
 
         Returns:
             Tuple of (embeddings, page_images)
@@ -200,15 +219,28 @@ class ColPaliEncoder:
         for page_num in range(len(doc)):
             page = doc[page_num]
             # Render at 2x resolution for better quality
-            mat = fitz.Matrix(2.0, 2.0)
-            pix = page.get_pixmap(matrix=mat)
+            # mat = fitz.Matrix(2.0, 2.0)
+            pix = page.get_pixmap() # matrix=mat)
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             page_images.append(img)
 
         doc.close()
 
-        # Encode all pages
-        embeddings = self.encode_pdf_page(page_images)
+        # Encode pages in batches to avoid OOM
+        all_embeddings = []
+        logger.info(f"Encoding {len(page_images)} pages from {pdf_path.name} in batches of {batch_size}...")
+        with torch.no_grad():
+            for i in range(0, len(page_images), batch_size):
+                batch = page_images[i:i + batch_size]
+                batch_embeddings = self.encode_pdf_page(batch)
+                all_embeddings.append(batch_embeddings)
+            # Clear CUDA cache between batches if using GPU
+            # if self.device.startswith("cuda"):
+            #     torch.cuda.empty_cache()
+        logger.info(f"Finished encoding pages from {pdf_path.name}.")
+
+        # Concatenate all batch embeddings and move to CPU
+        embeddings = torch.cat(all_embeddings, dim=0).cpu()
 
         return embeddings, page_images
 
