@@ -124,13 +124,14 @@ class ItemInfo(BaseModel):
 class PDFSearchResult(BaseModel):
     id: str
     score: float
-    filename: str
-    pdf_name: str
-    page: int
-    page_number: int
-    path: str  # Path to page thumbnail
-    pdf_path: str
-    total_pages: int
+    image_path: str  # Path to page thumbnail image
+    # Optional fields that may not be present in older indexed data
+    filename: str = ""
+    pdf_name: str = ""
+    page: int = 0
+    page_number: int = 0
+    pdf_path: str = ""
+    total_pages: int = 0
 
 
 class PDFSearchResponse(BaseModel):

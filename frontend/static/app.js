@@ -111,7 +111,7 @@ async function loadSuggestions() {
  */
 async function loadAllImages() {
     try {
-        const res = await fetch(`${API_BASE}/api/images?limit=100`);
+        const res = await fetch(`${API_BASE}/api/images?limit=36`);
         allImages = await res.json();
         
         // Show all images by default

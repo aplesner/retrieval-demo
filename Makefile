@@ -146,7 +146,7 @@ docker-restart:
 	docker-compose restart
 
 docker-logs:
-	docker-compose logs -f
+	docker-compose logs -f --tail 100
 
 docker-clean:
 	docker-compose down -v

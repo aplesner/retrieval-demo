@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # CLIP Model settings (images + text)
     clip_model: str = "openai/clip-vit-base-patch32"
     clip_embedding_dim: int = 512
-    clip_device: str = "cuda:1"  # GPU 1 with CLAP (smaller models)
+    clip_device: str = "cuda:0"  # GPU 1 with CLAP (smaller models)
 
     # CLAP Model settings (audio + text)
     clap_model: str = "laion/clap-htsat-unfused"
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # ColPali Model settings (PDF + text)
     colpali_model: str = "vidore/colpali-v1.2"
     colpali_embedding_dim: int = 128  # ColPali uses multi-vector embeddings
-    colpali_device: str = "cuda:0"  # GPU for ColPali
+    colpali_device: str = "cuda:1"  # GPU for ColPali
 
     # Qdrant settings
     qdrant_host: str = "localhost"
@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     pdf_image_dir: Path = Path("data/pdf_images")  # Rendered page thumbnails
     
     # Search settings
-    default_limit: int = 50
-    max_limit: int = 100
+    default_limit: int = 36
+    max_limit: int = 36
     
     # Suggested queries for the demo
     image_suggestions: list[str] = [

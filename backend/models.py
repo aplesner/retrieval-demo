@@ -11,6 +11,35 @@ from .config import settings
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def get_optimal_dtype(device: str) -> torch.dtype:
+    """Get optimal dtype for the given device.
+    
+    Args:
+        device: Device string (e.g., 'cuda:0', 'cuda:1', 'cpu')
+        
+    Returns:
+        torch.float32 for CPU, torch.float16 for GTX 1080 and similar,
+        torch.bfloat16 for newer GPUs (compute capability 8.0+)
+    """
+    if device == "cpu":
+        return torch.float32
+    
+    # Extract GPU index
+    gpu_idx = int(device.split(":")[-1]) if ":" in device else 0
+    
+    # Check compute capability
+    if not torch.cuda.is_available():
+        return torch.float32
+        
+    compute_capability = torch.cuda.get_device_capability(gpu_idx)
+    if compute_capability[0] >= 8:
+        return torch.bfloat16
+    else:
+        return torch.float16
+
+
 # ============================================================================
 # CLIP Encoder (Text + Images)
 # ============================================================================
@@ -26,7 +55,14 @@ class CLIPEncoder:
         from transformers import CLIPProcessor, CLIPModel
         
         self.device = device
-        self.model = CLIPModel.from_pretrained(model_name).to(device)
+        self.dtype = get_optimal_dtype(device)
+        
+        logger.info(f"Loading CLIP model on {device} with dtype {self.dtype}")
+        
+        self.model = CLIPModel.from_pretrained(
+            model_name,
+            dtype=self.dtype,
+        ).to(device)
         self.processor = CLIPProcessor.from_pretrained(model_name)
         self.model.eval()
     
@@ -39,18 +75,19 @@ class CLIPEncoder:
         embeddings = self.model.get_text_features(**inputs)
         embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
         
-        return embeddings.cpu()
+        return embeddings.float().cpu()  # Return as float32 for compatibility
     
     @torch.no_grad()
     def encode_image(self, images: list[Image.Image]) -> torch.Tensor:
         """Encode images to embeddings."""
         inputs = self.processor(images=images, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        inputs = {k: v.to(self.device, dtype=self.dtype) if v.dtype.is_floating_point else v.to(self.device) 
+                  for k, v in inputs.items()}
         
         embeddings = self.model.get_image_features(**inputs)
         embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
         
-        return embeddings.cpu()
+        return embeddings.float().cpu()  # Return as float32 for compatibility
     
     @torch.no_grad()
     def encode_image_from_path(self, image_paths: list[Path]) -> torch.Tensor:
@@ -74,7 +111,14 @@ class CLAPEncoder:
         from transformers import ClapModel, ClapProcessor
         
         self.device = device
-        self.model = ClapModel.from_pretrained(model_name).to(device)
+        self.dtype = get_optimal_dtype(device)
+        
+        logger.info(f"Loading CLAP model on {device} with dtype {self.dtype}")
+        
+        self.model = ClapModel.from_pretrained(
+            model_name,
+            dtype=self.dtype,
+        ).to(device)
         self.processor = ClapProcessor.from_pretrained(model_name)
         self.model.eval()
         self.sample_rate = 48000  # CLAP expects 48kHz
@@ -88,7 +132,7 @@ class CLAPEncoder:
         embeddings = self.model.get_text_features(**inputs)
         embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
         
-        return embeddings.cpu()
+        return embeddings.float().cpu()  # Return as float32 for compatibility
     
     @torch.no_grad()
     def encode_audio(self, audio_arrays: list[np.ndarray], sample_rates: list[int]) -> torch.Tensor:
@@ -113,12 +157,14 @@ class CLAPEncoder:
             return_tensors="pt",
             padding=True,
         )
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        # Move to device and convert floating point tensors to correct dtype
+        inputs = {k: v.to(self.device, dtype=self.dtype) if v.dtype.is_floating_point else v.to(self.device) 
+                  for k, v in inputs.items()}
         
         embeddings = self.model.get_audio_features(**inputs)
         embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
         
-        return embeddings.cpu()
+        return embeddings.float().cpu()  # Return as float32 for compatibility
     
     @torch.no_grad()
     def encode_audio_from_path(self, audio_paths: list[Path]) -> torch.Tensor:
@@ -151,23 +197,13 @@ class ColPaliEncoder:
         from colpali_engine.models import ColPali, ColPaliProcessor
 
         self.device = device
+        self.dtype = get_optimal_dtype(device)
 
-        # Use float32 for CPU, float16 for GPU (bfloat16 requires compute capability 8.0+)
-        if device == "cpu":
-            dtype = torch.float32
-        else:
-            # Check if GPU supports bfloat16 (compute capability 8.0+)
-            # GTX 1080 is compute capability 6.1, so use float16
-            gpu_idx = int(device.split(":")[-1]) if ":" in device else 0
-            compute_capability = torch.cuda.get_device_capability(gpu_idx)
-            if compute_capability[0] >= 8:
-                dtype = torch.bfloat16
-            else:
-                dtype = torch.float16
+        logger.info(f"Loading ColPali model on {device} with dtype {self.dtype}")
 
         self.model = ColPali.from_pretrained(
             model_name,
-            dtype=dtype,
+            dtype=self.dtype,
             device_map=device,
         ).to(device).eval()
         self.processor = ColPaliProcessor.from_pretrained(model_name)

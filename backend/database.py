@@ -196,16 +196,20 @@ class VectorDB:
             collection_name=settings.pdf_collection,
             query=query_multi,  # Pass as list of vectors
             limit=limit,
+            with_payload=True,  # Retrieve full payload including metadata
         )
 
         search_results = [
             {
-                "id": hit.payload.get("item_id"),
+                "id": hit.payload.get("item_id", hit.id),  # Fallback to point ID if no item_id
                 "score": hit.score,
-                "filename": hit.payload.get("filename"),
-                "path": hit.payload.get("path"),
-                "category": hit.payload.get("category"),
+                "image_path": hit.payload.get("path", ""),  # Map 'path' to 'image_path'
+                "filename": hit.payload.get("filename", ""),
+                "pdf_name": hit.payload.get("pdf_name", ""),
+                "page": hit.payload.get("page", 0),
                 "page_number": hit.payload.get("page_number", hit.payload.get("page", 0)),
+                "pdf_path": hit.payload.get("pdf_path", ""),
+                "total_pages": hit.payload.get("total_pages", 0),
             }
             for hit in results.points if hit.payload is not None
         ]
@@ -242,7 +246,27 @@ class VectorDB:
 
     def get_all_pdfs(self, limit: int = settings.max_limit) -> list[dict]:
         """Get all indexed PDF pages."""
-        return self.get_all_items(settings.pdf_collection, limit)
+        results, _ = self.client.scroll(
+            collection_name=settings.pdf_collection,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        
+        return [
+            {
+                "id": point.payload.get("item_id", point.id),  # Fallback to point ID if no item_id
+                "score": 0.0,  # No score for listing all PDFs
+                "image_path": point.payload.get("path", ""),  # Map 'path' to 'image_path'
+                "filename": point.payload.get("filename", ""),
+                "pdf_name": point.payload.get("pdf_name", ""),
+                "page": point.payload.get("page", 0),
+                "page_number": point.payload.get("page_number", point.payload.get("page", 0)),
+                "pdf_path": point.payload.get("pdf_path", ""),
+                "total_pages": point.payload.get("total_pages", 0),
+            }
+            for point in results if point.payload is not None
+        ]
     
     def get_embedding(self, collection: str, item_id: str) -> np.ndarray | None:
         """Get the embedding for a specific item."""

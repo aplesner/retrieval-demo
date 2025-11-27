@@ -39,14 +39,14 @@ services:
       - RETRIEVAL_CLIP_DEVICE=cuda:1
       - RETRIEVAL_CLAP_DEVICE=cuda:1
       - RETRIEVAL_COLPALI_DEVICE=cuda:0
-      # NVIDIA settings (ignored if no GPU)
+      # NVIDIA settings
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     depends_on:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
-    # GPU support (requires nvidia-docker):
+    # GPU support - use deploy section for Docker Compose v2.x
     deploy:
       resources:
         reservations:
